@@ -1,122 +1,245 @@
 # A Sentient program to solve snake egg puzzles: https://youtu.be/73Meh3NPno4
 #
-# The program represents each of the numbered regions and the snake as arrays of
-# coordinates. It then constrains those arrays according to rules of the puzzle.
-#
-# This program takes ages to run at the moment. I need to find a more efficient
-# way to encode some of the constraints.
+# The program encodes the head and tail of the snake as -1 and its body as 0.
+# All the numbered regions are encoded as that number in the 10x10 grid.
 
 function main() {
-  array1<array2<int5>> ones;
-  array2<array2<int5>> twos;
-  array3<array2<int5>> threes;
-  array4<array2<int5>> fours;
-  array5<array2<int5>> fives;
-  array6<array2<int5>> sixes;
-  array7<array2<int5>> sevens;
-  array8<array2<int5>> eights;
-  array9<array2<int5>> nines;
+  array10<array10<int5>> grid;
 
-  # The 55 remaining cells must be snake.
-  array55<array2<int5>> snake;
-
-  coords = ones.concat(twos).concat(threes).concat(fours).concat(fives).concat(sixes).concat(sevens).concat(eights).concat(nines).concat(snake);
-
-  invariant coords.uniq?;
-  invariant coords.all?(*inBounds?);
-
-  # Consecutive snake cells must be orthogonal and non-consecutive cells must not be.
-  snake.eachCombination(2, function^ (pair, indexes) {
-    orthogonal = orthogonal?(pair[0], pair[1]);
-    consecutive = indexes[1] - indexes[0] == 1;
-
-    invariant consecutive && orthogonal || !consecutive && !orthogonal;
+  grid.each(function (row) {
+    row.each(function (digit) {
+      invariant digit.between?(-1, 9);
+    });
   });
 
-  # Symmetry break cells in a region so they're ordered top-bottom, left-right.
-  invariant ordered?(twos);
-  invariant ordered?(threes);
-  invariant ordered?(fours);
-  invariant ordered?(fives);
-  invariant ordered?(sixes);
-  invariant ordered?(sevens);
-  invariant ordered?(eights);
-  invariant ordered?(nines);
+  invariant grid.numberOf(0) == 53; # Snake body pieces.
+  invariant grid.numberOf(-1) == 2; # Snake head/tail pieces.
 
-  # Cells in a region must be connected.
-  invariant connected?(twos);
-  invariant connected?(threes);
-  invariant connected?(fours);
-  invariant connected?(fives);
-  invariant connected?(sixes);
-  invariant connected?(sevens);
-  invariant connected?(eights);
-  invariant connected?(nines);
+  invariant grid.validSnake?;
+  invariant grid.adjacencyCount(0) == 52; # Prevent snake loops.
 
-  expose ones, twos, threes, fours, fives, sixes, sevens, eights, nines, snake;
-};
-
-function concat(arr1, arr2) {
-  result = arr1;
-
-  arr2.each(function^ (element) {
-    result = result.push(element);
+  1.upto(9, function^ (digit) {
+    invariant grid.numberOf(digit) == digit;
+    invariant grid.adjacencyCount(digit) + 1 == digit;
   });
 
-  return result;
+  grid.pairs.each(function (pair) {
+    invariant pair.sameRegion? || pair.any?(*snake?);
+  });
+
+  expose grid;
 };
 
-function inBounds?(coordinate) {
-  return coordinate.x.between?(0, 9) && coordinate.y.between?(0, 9);
+# Check if the grid contains a valid snake by running a series of perceptrons
+# over it and checking if the number of orthogonal connecting pieces is correct.
+function validSnake?(grid) {
+  valid = grid.perceptrons.all?(function (perceptron) {
+    middleDigit = perceptron.e;
+    orthogonals = [perceptron.b, perceptron.d, perceptron.f, perceptron.h];
+
+    return middleDigit.validSurroundings?(orthogonals);
+  });
+
+  valid &&= grid.borderPerceptrons.all?(function (perceptron) {
+    middleDigit = perceptron.b;
+    orthogonals = [perceptron.a, perceptron.c, perceptron.e];
+
+    return middleDigit.validSurroundings?(orthogonals);
+  });
+
+  valid &&= grid.cornerPerceptrons.all?(function (perceptron) {
+    cornerDigit = perceptron.a;
+    orthogonals = [perceptron.b, perceptron.c];
+
+    return cornerDigit.validSurroundings?(orthogonals);
+  });
+
+  return valid;
 };
 
+# Check if the number of orthogonal snake parts is valid for the digit.
+function validSurroundings?(digit, orthogonals) {
+  surroundCount = orthogonals.countBy(*snake?);
+  dontCare = !digit.snake?;
+
+  return digit.snakeHead? && surroundCount == 1
+      || digit.snakeBody? && surroundCount == 2
+      || dontCare;
+};
+
+# Count how many times a digit is next to the same digit in the grid. When one
+# is below and right of others, we have to be careful not to double count it.
+function adjacencyCount(grid, digit) {
+  digit2 = [digit, digit];
+  digit3 = [digit, digit, digit];
+
+  count = grid.quadChunks.map(function^ (chunk) {
+    topMatches = chunk.countBy(function^ (quad) {
+      return [quad.topLeft, quad.topRight] == digit2;
+    });
+
+    leftMatches = chunk.countBy(function^ (quad) {
+      return [quad.topLeft, quad.botLeft] == digit2;
+    });
+
+    cornerMatches = chunk.countBy(function^ (quad) {
+      return [quad.topRight, quad.botLeft, quad.botRight] == digit3;
+    });
+
+    rightPair = [chunk.last.topRight, chunk.last.botRight];
+    rightMatches = rightPair == digit2 ? 1 : 0;
+
+    return topMatches + leftMatches - cornerMatches + rightMatches;
+  }).sum;
+
+  grid.last.eachCons(2, function^ (pair) {
+    count += pair == digit2 ? 1 : 0;
+  });
+
+  return count;
+};
+
+# Count how many times digit appears in the grid.
+function numberOf(grid, digit) {
+  return grid.map(function^ (row) {
+    return row.countBy(function^ (d) {
+      return d == digit;
+    });
+  }).sum;
+};
+
+# Return horizontal and vertical pairs as a flat array.
+function pairs(grid) {
+  pairs = [];
+
+  grid.each(function^ (row) {
+    row.eachCons(2, function^ (pair) {
+      pairs = pairs.push(pair);
+    });
+  });
+
+  grid.transpose.each(function^ (column) {
+    column.eachCons(2, function^ (pair) {
+      pairs = pairs.push(pair);
+    });
+  });
+
+  return pairs;
+};
+
+# Return all 2x2 quads in the grid, chunked by rows.
+function quadChunks(grid) {
+  chunks = [];
+
+  grid.eachCons(2, function^ (rowPair) {
+    quads = [];
+
+    # TODO: test if there's any performance hit of using #times
+    rowPair.first.eachCons(2, function^ (topPair, indexes) {
+      topLeft = topPair[0];
+      topRight = topPair[1];
+      botLeft = rowPair.last[indexes[0]];
+      botRight = rowPair.last[indexes[1]];
+
+      quads = quads.push([topLeft, topRight, botLeft, botRight]);
+    });
+
+    chunks = chunks.push(quads);
+  });
+
+  return chunks;
+};
+
+# Return all 3x3 perceptrons in the grid, chunked by rows.
+function perceptrons(grid) {
+  perceptrons = [];
+
+  grid.eachCons(3, function^ (rowTriple) {
+    rowTriple.first.eachCons(3, function^ (topTriple, indexes) {
+      a = topTriple[0];
+      b = topTriple[1];
+      c = topTriple[2];
+
+      d = rowTriple[1][indexes[0]];
+      e = rowTriple[1][indexes[1]];
+      f = rowTriple[1][indexes[2]];
+
+      g = rowTriple.last[indexes[0]];
+      h = rowTriple.last[indexes[1]];
+      i = rowTriple.last[indexes[2]];
+
+      perceptrons = perceptrons.push([[a, b, c, d, e, f, g, h, i]]);
+    });
+  });
+
+  return perceptrons;
+};
+
+# Return 3x2 perceptrons at the border of the grid.
+function borderPerceptrons(grid) {
+  perceptrons = [];
+
+  rows, cols = grid, grid.transpose;
+  borders = [
+    [rows[0], rows[1]],
+    [rows[9], rows[8]],
+    [cols[0], cols[1]],
+    [cols[9], cols[8]]
+  ];
+
+  borders.each(function^ (linePair) {
+    linePair.first.eachCons(3, function^ (firstTriple, indexes) {
+      a = firstTriple[0];
+      b = firstTriple[1];
+      c = firstTriple[2];
+
+      d = linePair.last[indexes[0]];
+      e = linePair.last[indexes[1]];
+      f = linePair.last[indexes[2]];
+
+      perceptrons = perceptrons.push([[a, b, c, d, e, f]]);
+    });
+  });
+
+  return perceptrons;
+};
+
+# Return 2x2 perceptrons at the corners of the grid.
+function cornerPerceptrons(grid) {
+  topLeft  = [grid[0][0], grid[0][1], grid[1][0], grid[1][1]];
+  topRight = [grid[0][9], grid[0][8], grid[1][9], grid[1][8]];
+  botLeft  = [grid[9][0], grid[9][1], grid[8][0], grid[8][1]];
+  botRight = [grid[9][9], grid[9][8], grid[8][9], grid[8][8]];
+
+  return [[topLeft], [topRight], [botLeft], [botRight]];
+};
+
+# Some convenience methods for working with quads.
+function topLeft(quad)  { return quad[0]; };
+function topRight(quad) { return quad[1]; };
+function botLeft(quad)  { return quad[2]; };
+function botRight(quad) { return quad[3]; };
+
+# Some convenience methods for working with perceptrons.
+# Use the type system to avoid calling topLeft, etc on perceptrons.
+function a(perceptron) { return perceptron.first[0]; };
+function b(perceptron) { return perceptron.first[1]; };
+function c(perceptron) { return perceptron.first[2]; };
+function d(perceptron) { return perceptron.first[3]; };
+function e(perceptron) { return perceptron.first[4]; };
+function f(perceptron) { return perceptron.first[5]; };
+function g(perceptron) { return perceptron.first[6]; };
+function h(perceptron) { return perceptron.first[7]; };
+function i(perceptron) { return perceptron.first[8]; };
+
+# Some convenience methods for working with snake coordinates.
 function x(coordinate) { return coordinate[0]; };
 function y(coordinate) { return coordinate[1]; };
 
-function orthogonal?(coord1, coord2) {
-  xDelta = (coord1.x - coord2.x).abs;
-  yDelta = (coord1.y - coord2.y).abs;
-
-  return xDelta == 0 && yDelta == 1
-      || xDelta == 1 && yDelta == 0;
-};
-
-# Cell i must be one to the right of or below some cell j that came before it.
-function connected?(region) {
-  connected = true;
-  region.each(function^ (coord1, i) {
-    int4 j;
-
-    coord2 = region[j];
-    first = i == 0;
-    below = coord1.below?(coord2);
-    right = coord1.rightOf?(coord2);
-
-    connected &&= first || j < i && (below || right);
-  });
-
-  return connected;
-};
-
-function rightOf?(coord1, coord2) {
-  return coord1.x - coord2.x == 1 && coord1.y - coord2.y == 0;
-};
-
-function below?(coord1, coord2) {
-  return coord1.x - coord2.x == 0 && coord1.y - coord2.y == 1;
-};
-
-function ordered?(arr) {
-  ordered = true;
-  arr.eachCons(2, function^ (pair) {
-    ordered &&= pair[0].lessThan?(pair[1]);
-  });
-
-  return ordered;
-};
-
-function lessThan?(coord1, coord2) {
-  return coord1.y < coord2.y || coord1.y == coord2.y && coord1.x < coord2.x;
-};
+# The snake's body is encoded as 0 and its head/tail as -1.
+function snake?(digit) { return digit.snakeBody? || digit.snakeHead?; };
+function snakeBody?(digit) { return digit == 0; };
+function snakeHead?(digit) { return digit == -1; };
+function sameRegion?(pair) { return pair[0] == pair[1]; };
 
 main();

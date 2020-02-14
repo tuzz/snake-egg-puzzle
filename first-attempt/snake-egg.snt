@@ -1,0 +1,122 @@
+# A Sentient program to solve snake egg puzzles: https://youtu.be/73Meh3NPno4
+#
+# The program represents each of the numbered regions and the snake as arrays of
+# coordinates. It then constrains those arrays according to rules of the puzzle.
+#
+# This program takes ages to run at the moment. I need to find a more efficient
+# way to encode some of the constraints.
+
+function main() {
+  array1<array2<int5>> ones;
+  array2<array2<int5>> twos;
+  array3<array2<int5>> threes;
+  array4<array2<int5>> fours;
+  array5<array2<int5>> fives;
+  array6<array2<int5>> sixes;
+  array7<array2<int5>> sevens;
+  array8<array2<int5>> eights;
+  array9<array2<int5>> nines;
+
+  # The 55 remaining cells must be snake.
+  array55<array2<int5>> snake;
+
+  coords = ones.concat(twos).concat(threes).concat(fours).concat(fives).concat(sixes).concat(sevens).concat(eights).concat(nines).concat(snake);
+
+  invariant coords.uniq?;
+  invariant coords.all?(*inBounds?);
+
+  # Consecutive snake cells must be orthogonal and non-consecutive cells must not be.
+  snake.eachCombination(2, function^ (pair, indexes) {
+    orthogonal = orthogonal?(pair[0], pair[1]);
+    consecutive = indexes[1] - indexes[0] == 1;
+
+    invariant consecutive && orthogonal || !consecutive && !orthogonal;
+  });
+
+  # Symmetry break cells in a region so they're ordered top-bottom, left-right.
+  invariant ordered?(twos);
+  invariant ordered?(threes);
+  invariant ordered?(fours);
+  invariant ordered?(fives);
+  invariant ordered?(sixes);
+  invariant ordered?(sevens);
+  invariant ordered?(eights);
+  invariant ordered?(nines);
+
+  # Cells in a region must be connected.
+  invariant connected?(twos);
+  invariant connected?(threes);
+  invariant connected?(fours);
+  invariant connected?(fives);
+  invariant connected?(sixes);
+  invariant connected?(sevens);
+  invariant connected?(eights);
+  invariant connected?(nines);
+
+  expose ones, twos, threes, fours, fives, sixes, sevens, eights, nines, snake;
+};
+
+function concat(arr1, arr2) {
+  result = arr1;
+
+  arr2.each(function^ (element) {
+    result = result.push(element);
+  });
+
+  return result;
+};
+
+function inBounds?(coordinate) {
+  return coordinate.x.between?(0, 9) && coordinate.y.between?(0, 9);
+};
+
+function x(coordinate) { return coordinate[0]; };
+function y(coordinate) { return coordinate[1]; };
+
+function orthogonal?(coord1, coord2) {
+  xDelta = (coord1.x - coord2.x).abs;
+  yDelta = (coord1.y - coord2.y).abs;
+
+  return xDelta == 0 && yDelta == 1
+      || xDelta == 1 && yDelta == 0;
+};
+
+# Cell i must be one to the right of or below some cell j that came before it.
+function connected?(region) {
+  connected = true;
+  region.each(function^ (coord1, i) {
+    int4 j;
+
+    coord2 = region[j];
+    first = i == 0;
+    below = coord1.below?(coord2);
+    right = coord1.rightOf?(coord2);
+
+    connected &&= first || j < i && (below || right);
+  });
+
+  return connected;
+};
+
+function rightOf?(coord1, coord2) {
+  return coord1.x - coord2.x == 1 && coord1.y - coord2.y == 0;
+};
+
+function below?(coord1, coord2) {
+  return coord1.x - coord2.x == 0 && coord1.y - coord2.y == 1;
+};
+
+function ordered?(arr) {
+  ordered = true;
+  arr.eachCons(2, function^ (pair) {
+    ordered &&= pair[0].lessThan?(pair[1]);
+  });
+
+  return ordered;
+};
+
+function lessThan?(coord1, coord2) {
+  return coord1.y < coord2.y || coord1.y == coord2.y && coord1.x < coord2.x;
+};
+
+main();
