@@ -5,6 +5,7 @@
 
 function main() {
   array10<array10<int5>> grid;
+  array55<array2<int5>> snake;
 
   grid.each(function (row) {
     row.each(function (digit) {
@@ -12,17 +13,48 @@ function main() {
     });
   });
 
-  invariant grid.numberOf(0) == 53; # Snake body pieces.
-  invariant grid.numberOf(-1) == 2; # Snake head/tail pieces.
+  snake.each(function (coord) {
+    invariant coord.x.between?(0, 9);
+    invariant coord.y.between?(0, 9);
+  });
 
-  invariant grid.validSnake?;
-  invariant grid.adjacencyCount(0) == 52; # Prevent snake loops.
+  # The snake coordinates should follow from each other.
+  snake.eachCons(2, function (coords) {
+    invariant orthogonal?(coords[0], coords[1]);
+  });
+
+  # The snake should not intersect itself.
+  invariant snake.uniq?;
+
+  # The grid should contain a -1 at the head and tail of the snake.
+  invariant grid[snake.head.y][snake.head.x] == -1;
+  invariant grid[snake.tail.y][snake.tail.x] == -1;
+
+  # The grid should contain a 0 for each body piece of the snake.
+  snake.body.each(function^ (coord) {
+    invariant grid[coord.y][coord.x] == 0;
+  });
+
+  # The grid should not contain any other snake pieces.
+  invariant grid.numberOf(-1) == 2;
+  invariant grid.numberOf(0) == 53;
+
+  # Snake body pieces should connect to two other orthogonal snake pieces.
+  # Snake head/tail pieces should connect to one other.
+  invariant grid.validSnakeConnections?;
+  # TODO: see if this ^ can be replaced by a simpler check on the snake's path.
+
+  # Compute this once before the loop.
+  quads = grid.quadChunks;
 
   1.upto(9, function^ (digit) {
     invariant grid.numberOf(digit) == digit;
-    invariant grid.adjacencyCount(digit) + 1 == digit;
+
+    # The digit should appear as a single contiguous region in the grid.
+    invariant grid.adjacencyCount(quads, digit) + 1 == digit;
   });
 
+  # Regions should not connect with each other. The snake should separate them.
   grid.pairs.each(function (pair) {
     invariant pair.sameRegion? || pair.any?(*snake?);
   });
@@ -30,9 +62,18 @@ function main() {
   expose grid;
 };
 
+# Check if coord1 is one horizontal or vertical unit away from coord2.
+function orthogonal?(coord1, coord2) {
+  xDelta = (coord1.x - coord2.x).abs;
+  yDelta = (coord1.y - coord2.y).abs;
+
+  return xDelta == 0 && yDelta == 1
+      || xDelta == 1 && yDelta == 0;
+};
+
 # Check if the grid contains a valid snake by running a series of perceptrons
 # over it and checking if the number of orthogonal connecting pieces is correct.
-function validSnake?(grid) {
+function validSnakeConnections?(grid) {
   valid = grid.perceptrons.all?(function (perceptron) {
     middleDigit = perceptron.e;
     orthogonals = [perceptron.b, perceptron.d, perceptron.f, perceptron.h];
@@ -62,18 +103,18 @@ function validSurroundings?(digit, orthogonals) {
   surroundCount = orthogonals.countBy(*snake?);
   dontCare = !digit.snake?;
 
-  return digit.snakeHead? && surroundCount == 1
+  return digit.headOrTail? && surroundCount == 1
       || digit.snakeBody? && surroundCount == 2
       || dontCare;
 };
 
 # Count how many times a digit is next to the same digit in the grid. When one
 # is below and right of others, we have to be careful not to double count it.
-function adjacencyCount(grid, digit) {
+function adjacencyCount(grid, quads, digit) {
   digit2 = [digit, digit];
-  digit3 = [digit, digit, digit];
+  digit4 = [digit, digit, digit, digit];
 
-  count = grid.quadChunks.map(function^ (chunk) {
+  count = quads.map(function^ (chunk) {
     topMatches = chunk.countBy(function^ (quad) {
       return [quad.topLeft, quad.topRight] == digit2;
     });
@@ -82,16 +123,17 @@ function adjacencyCount(grid, digit) {
       return [quad.topLeft, quad.botLeft] == digit2;
     });
 
-    cornerMatches = chunk.countBy(function^ (quad) {
-      return [quad.topRight, quad.botLeft, quad.botRight] == digit3;
-    });
-
     rightPair = [chunk.last.topRight, chunk.last.botRight];
     rightMatches = rightPair == digit2 ? 1 : 0;
 
-    return topMatches + leftMatches - cornerMatches + rightMatches;
+    doubleCounts = chunk.countBy(function^ (quad) {
+        return quad == digit4;
+    });
+
+    return topMatches + leftMatches + rightMatches - doubleCounts;
   }).sum;
 
+  # Check for matches on the bottom row of the grid.
   grid.last.eachCons(2, function^ (pair) {
     count += pair == digit2 ? 1 : 0;
   });
@@ -232,14 +274,29 @@ function g(perceptron) { return perceptron.first[6]; };
 function h(perceptron) { return perceptron.first[7]; };
 function i(perceptron) { return perceptron.first[8]; };
 
-# Some convenience methods for working with snake coordinates.
-function x(coordinate) { return coordinate[0]; };
-function y(coordinate) { return coordinate[1]; };
-
-# The snake's body is encoded as 0 and its head/tail as -1.
-function snake?(digit) { return digit.snakeBody? || digit.snakeHead?; };
+# Some convenience methods for working with snakes.
+function snake?(digit) { return digit.snakeBody? || digit.headOrTail?; };
 function snakeBody?(digit) { return digit == 0; };
-function snakeHead?(digit) { return digit == -1; };
+function headOrTail?(digit) { return digit == -1; };
 function sameRegion?(pair) { return pair[0] == pair[1]; };
+
+function head(snake) { return snake.first; };
+function tail(snake) { return snake.last; };
+function x(coord) { return coord[0]; };
+function y(coord) { return coord[1]; };
+
+# Get the middle section of the snake excluding head and tail.
+# Sentient doesn't support ranges so do something hacky with eachCons.
+function body(snake) {
+  body = [];
+
+  snake.eachCons(54, function^ (arr1) {
+    arr1.reverse.eachCons(53, function^ (arr2) {
+      body = arr2.reverse;
+    });
+  });
+
+  return body;
+};
 
 main();
