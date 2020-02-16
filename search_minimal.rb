@@ -27,12 +27,22 @@ grid.each.with_index do |row, y|
 end
 
 head_and_tail = coords[-1]
-counter = 1
+minimals = []
 
+counter = 1
 puts "Searching..."
+
 1.upto(regions.size) do |number_of_digits|
+  all_skipped = true
+
   regions.combination(number_of_digits).each do |selected_numbers|
     selection = head_and_tail + selected_numbers
+    covered = minimals.any? { |m| selection.all? { |s| m.include?(s) } }
+
+    if covered
+      all_skipped = false
+      next
+    end
 
     assignments = { grid: {} }
     selection.each do |x, y, n|
@@ -46,6 +56,7 @@ puts "Searching..."
     counter += 1
 
     if JSON.parse(output).empty?
+      minimals.push(selection)
       puts "\nThis combination of starting numbers uniquely define a solution:"
 
       selected_numbers.each do |x, y, n|
@@ -53,4 +64,13 @@ puts "Searching..."
       end
     end
   end
+
+  break if all_skipped
 end
+
+5.times { puts }
+puts "Finished. Here's the grid again:"
+puts grid.inspect
+puts
+puts "Here's the minimal set of starting numbers that uniquely define solutions:"
+minimals.each { |m| puts m.inspect }
